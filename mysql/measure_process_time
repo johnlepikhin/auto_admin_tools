@@ -1,0 +1,30 @@
+#!/bin/bash
+
+function fatal {
+	echo $1;
+	exit 1
+}
+
+function usage {
+	fatal "Usage:
+
+measure_process_time <PID> <seconds>
+"
+}
+
+if [[ -z "$1" || -z "$2" ]]; then
+	usage
+fi
+
+PID=$1
+SECS=$2
+
+IFS=" "
+t1=(`cat /proc/$PID/stat`)
+sleep $SECS
+t2=(`cat /proc/$PID/stat`)
+
+echo "user time: $((${t2[14]}-${t1[14]})) CPU ticks"
+echo "sys time: $((${t2[15]}-${t1[15]})) CPU ticks"
+echo "children user time: $((${t2[16]}-${t1[16]})) CPU ticks"
+echo "children system time: $((${t2[17]}-${t1[17]})) CPU ticks"
