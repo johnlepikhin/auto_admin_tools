@@ -1,0 +1,227 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Pod::Usage;
+use DBI;
+use Time::HiRes qw(sleep time);
+use POSIX qw(strftime);
+use Term::Cap;
+use Term::ReadKey;
+
+my $opt_host = 'localhost';
+my $opt_port = 3306;
+my $opt_user = 'root';
+my $opt_password = undef;
+my $opt_help = 0;
+my $opt_man = 0;
+my $opt_interval = 100;
+my $opt_head = 10;
+my $opt_report_iterations = 100;
+my $opt_report_resets_stats = 0;
+my $opt_style = 'default';
+
+GetOptions('h=s' => \$opt_host
+           , 'host|h=s' => \$opt_host
+           , 'password|p=s' => \$opt_password
+           , 'user|u=s' => \$opt_user
+           , 'port=i' => \$opt_port
+           , 'interval|i=i' => \$opt_interval
+           , 'head' => \$opt_head
+           , 'style=s' => \$opt_style
+           , 'report-iterations=i' => \$opt_report_iterations
+           , 'report-resets-stats' => \$opt_report_resets_stats
+           , 'help|?' => \$opt_help
+           , 'man|?' => \$opt_man
+    );
+
+pod2usage(-exitval => 0, -verbose => 2) if $opt_man;
+pod2usage(1) if $opt_help;
+
+sub fatal ($) {
+    printf STDERR "\n$_[0]\n\n";
+    pod2usage(1);
+}
+
+if (!defined ($opt_password)) {
+    fatal "Option --password is required!";
+}
+
+if ($opt_style ne 'default' && $opt_style ne 'top') {
+    fatal "Ivalid value for --style!";
+}
+
+
+
+# Connect to the database.
+my $dbh = DBI->connect("DBI:mysql:host=$opt_host;port=$opt_port",
+                       $opt_user, $opt_password,
+                       {'RaiseError' => 1});
+
+my %stat;
+my $stat_report_queries_found = 0;
+my $stat_total_queries_found = 0;
+
+sub count_report_lines () {
+    return (keys %stat);
+}
+
+sub printer_default () {
+    print "-------------------------------------------------\n";
+    my $timestamp = time();
+    print "-- TIMESTAMP $timestamp\n";
+    my $time = strftime "%F %T", localtime $timestamp;
+    print "-- TIME $time\n";
+    my $i = 0;
+  REPORT:
+    foreach (sort { $stat{$b} <=> $stat{$a} } keys %stat)
+  {
+        print "$stat{$_}   $_\n\n";
+        last REPORT if ++$i == $opt_head;
+  }
+}
+
+sub printer_top () {
+    print Term::Cap->Tgetent()->Tputs('cl');
+
+    my ($width, $height, undef, undef) = GetTerminalSize();
+    my $wleft = $width - 1;
+    my $hleft = $height - 1;
+
+    my $h_format = '@>>>>>>>  @<<<<<<<<<<<<<' . "\n";
+    $hleft--;
+    $h_format .= ('-' x $width) . "\n";
+    $hleft--;
+    formline ($h_format, ('FOUND', 'QUERY'));
+
+    my $l_format = '@#######  @';
+    $wleft -= length($l_format);
+
+    $l_format .= '<' x $wleft;
+
+    $l_format .= "\n";
+
+    my $lines = ($hleft > count_report_lines()) ? count_report_lines() : $hleft;
+
+    my @out_lines;
+    map { push @out_lines, $stat{$_}, $_ } (sort { $stat{$b} <=> $stat{$a} } keys %stat)[0..$lines-1];
+    if (@out_lines) {
+        formline ($l_format x $lines, @out_lines);
+    } else {
+        formline ("Empty list, wait...\n", ());
+    }
+    print $^A;
+    $^A = '';
+}
+
+my $query = 'show full processlist';
+
+print "-- Collecting data...\n";
+
+my $iter = 1;
+while (1) {
+    foreach my $row (@{$dbh->selectall_arrayref($query)}) {
+        my $info = $row->[7];
+
+        if (defined $info && $info ne $query) {
+            $info =~ s/[\n\t ]+/ /g;
+            $info =~ s/"(?:[^\\"]|\\.)*"/"..."/g;
+            $info =~ s/'(?:[^\\']|\\.)*'/'...'/g;
+            $info =~ s/([^a-zA-Z\d_]?)\d+/${1}00/g;
+            $info =~ s/\(((00|'\.\.\.'|"\.\.\.")(, *)?)*\)/(...)/g;
+            $info = lc $info;
+            $stat{$info}++;
+            $stat_report_queries_found++;
+            $stat_total_queries_found++;
+        }
+    }
+
+    sleep($opt_interval/1000);
+
+    if ($iter % $opt_report_iterations == 0) {
+        if ($opt_style eq 'default') {
+            printer_default ();
+        } elsif ($opt_style eq 'top') {
+            printer_top ();
+        }
+        if ($opt_report_resets_stats) {
+            $stat_report_queries_found=0;
+            %stat = ();
+        }
+    }
+    $iter++;
+}
+
+__END__
+
+=head1 NAME
+
+mysql_query_stats - Statistical profiler for MySQL
+
+=head1 SYNOPSIS
+
+mysql_query_stats --password <password> [options]
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<--host "..."> or B<-h "...">
+
+MySQL host name. Default value B<localhost>.
+
+=item B<--port N>
+
+MySQL port. Default value B<3306>.
+
+=item B<--user "..."> or B<-u "...">
+
+MySQL user name. Default value B<root>.
+
+=item B<--password "..."> or B<-p "...">
+
+MySQL password. This option is required.
+
+=item B<--interval N> or B<-i N>
+
+Interval in milliseconds between two queries of processlist. Default value is 100ms.
+
+=item B<--head N>
+
+Print only N of heading queries. Default is 10.
+
+=item B<--report-iterations N>
+
+Before printing next report collect data for N iterations. Default value is 100.
+Thus, report will be printed each <--interval>*<--report-iterations> milliseconds,
+by default 100*100=1000ms=10secs.
+
+=item B<--report-resets-stats>
+
+Reset statistics on every report. Default is off.
+
+=item B<--style "...">
+
+Report style. Available options: 'default', 'top'.
+
+=item B<--help>
+
+Print a brief help message and exits.
+
+=item B<--man>
+
+Prints the manual page and exits.
+
+=back
+
+=head1 DESCRIPTION
+
+This program tries to gather queires statistics in the same way as OProfile does for Linux kernel.
+
+It periodically sends C<show full processlist> parse response and collects queries of the same type. For example,
+C<select * from tbl where id=1> and C<select * from tbl where id=999> are counted with the same type.
+
+
+=cut
+
