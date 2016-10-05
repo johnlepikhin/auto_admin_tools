@@ -22,11 +22,13 @@ my $opt_report_iterations = 100;
 my $opt_report_resets_stats = 0;
 my $opt_report_states = 0;
 my $opt_style = 'default';
+my $opt_my_cnf = '~/.my.cnf';
 
 GetOptions('h=s' => \$opt_host
            , 'host|h=s' => \$opt_host
            , 'password|p=s' => \$opt_password
            , 'user|u=s' => \$opt_user
+           , 'my-cnf=s' => \$opt_my_cnf
            , 'port=i' => \$opt_port
            , 'interval|i=i' => \$opt_interval
            , 'head' => \$opt_head
@@ -46,18 +48,11 @@ sub fatal ($) {
     pod2usage(1);
 }
 
-if (!defined ($opt_password)) {
-    fatal "Option --password is required!";
-}
-
 if ($opt_style ne 'default' && $opt_style ne 'top') {
     fatal "Ivalid value for --style!";
 }
 
-
-
-# Connect to the database.
-my $dbh = DBI->connect("DBI:mysql:host=$opt_host;port=$opt_port",
+my $dbh = DBI->connect("DBI:mysql:host=$opt_host;port=$opt_port;mysql_read_default_file=$opt_my_cnf",
                        $opt_user, $opt_password,
                        {'RaiseError' => 1});
 
@@ -194,6 +189,10 @@ MySQL user name. Default value B<root>.
 =item B<--password "..."> or B<-p "...">
 
 MySQL password. This option is required.
+
+=item B<--my-cnf "...">
+
+Path to my.cnf, default is ~/.my.cnf. Useful for storing password.
 
 =item B<--interval N> or B<-i N>
 
