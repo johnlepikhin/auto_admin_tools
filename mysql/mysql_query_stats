@@ -21,6 +21,7 @@ my $opt_head = 10;
 my $opt_report_iterations = 100;
 my $opt_report_resets_stats = 0;
 my $opt_report_states = 0;
+my $opt_report_sample = 0;
 my $opt_style = 'default';
 my $opt_my_cnf = '~/.my.cnf';
 
@@ -36,6 +37,7 @@ GetOptions('h=s' => \$opt_host
            , 'report-iterations=i' => \$opt_report_iterations
            , 'report-resets-stats' => \$opt_report_resets_stats
            , 'report-states' => \$opt_report_states
+           , 'report-sample' => \$opt_report_sample
            , 'help|?' => \$opt_help
            , 'man|?' => \$opt_man
     );
@@ -74,12 +76,20 @@ sub printer_default () {
   REPORT:
     foreach (sort { $stat{$b}{count} <=> $stat{$a}{count} } keys %stat)
   {
+      print "$stat{$_}{count}\t$stat{$_}{db}\t$stat{$_}{q}\n";
+
       if ($opt_report_states) {
           foreach my $state (sort { $stat{$_}{state}{$b} <=> $stat{$_}{state}{$a} } keys %{$stat{$_}{state}}) {
               print "-- State statistics: $stat{$_}{state}{$state} $state\n";
           }
       }
-      print "$stat{$_}{count}\t$stat{$_}{db}\t$stat{$_}{q}\n\n";
+      
+      if ($opt_report_sample) {
+          print "-- Sample query: $stat{$_}{sample}\n";
+      }
+
+      print "\n";
+      
       last REPORT if ++$i == $opt_head;
   }
 }
@@ -130,6 +140,7 @@ while (1) {
 
         if (defined $info && defined $db && defined $state && $info ne $query) {
             $info =~ s/[\n\t ]+/ /g;
+            my $sample = $info;
             $info =~ s/"(?:[^\\"]|\\.)*"/"..."/g;
             $info =~ s/'(?:[^\\']|\\.)*'/'...'/g;
             $info =~ s/([^a-zA-Z\d_]?)\d+/${1}00/g;
@@ -138,6 +149,7 @@ while (1) {
             $stat{"$db-$info"}{count}++;
             $stat{"$db-$info"}{db}=$db;
             $stat{"$db-$info"}{q}=$info;
+            $stat{"$db-$info"}{sample}=$sample;
             $stat{"$db-$info"}{state}{$state}++;
             $stat_report_queries_found++;
             $stat_total_queries_found++;
@@ -212,13 +224,17 @@ by default 100*100=1000ms=10secs.
 
 Reset statistics on every report. Default is off.
 
+=item B<--style "...">
+
+Report style. Available options: 'default', 'top'.
+
 =item B<--report-states>
 
 Include states statistics into the report. This option works only with default style.
 
-=item B<--style "...">
+=item B<--report-sample>
 
-Report style. Available options: 'default', 'top'.
+Include sample query into the report. This option works only with default style.
 
 =item B<--help>
 
