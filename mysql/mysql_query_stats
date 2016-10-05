@@ -20,6 +20,7 @@ my $opt_interval = 100;
 my $opt_head = 10;
 my $opt_report_iterations = 100;
 my $opt_report_resets_stats = 0;
+my $opt_report_states = 0;
 my $opt_style = 'default';
 
 GetOptions('h=s' => \$opt_host
@@ -32,6 +33,7 @@ GetOptions('h=s' => \$opt_host
            , 'style=s' => \$opt_style
            , 'report-iterations=i' => \$opt_report_iterations
            , 'report-resets-stats' => \$opt_report_resets_stats
+           , 'report-states' => \$opt_report_states
            , 'help|?' => \$opt_help
            , 'man|?' => \$opt_man
     );
@@ -75,10 +77,15 @@ sub printer_default () {
     print "-- TIME $time\n";
     my $i = 0;
   REPORT:
-    foreach (sort { $stat{$b} <=> $stat{$a} } keys %stat)
+    foreach (sort { $stat{$b}{count} <=> $stat{$a}{count} } keys %stat)
   {
-        print "$stat{$_}   $_\n\n";
-        last REPORT if ++$i == $opt_head;
+      if ($opt_report_states) {
+          foreach my $state (sort { $stat{$_}{state}{$b} <=> $stat{$_}{state}{$a} } keys %{$stat{$_}{state}}) {
+              print "-- State statistics: $stat{$_}{state}{$state} $state\n";
+          }
+      }
+      print "$stat{$_}{count}\t$stat{$_}{db}\t$stat{$_}{q}\n\n";
+      last REPORT if ++$i == $opt_head;
   }
 }
 
@@ -89,13 +96,13 @@ sub printer_top () {
     my $wleft = $width - 1;
     my $hleft = $height - 1;
 
-    my $h_format = '@>>>>>>>  @<<<<<<<<<<<<<' . "\n";
+    my $h_format = '@>>>>>>>  @<<<<<<<<<<<<<<<<<  @<<<<<<<<<<<<<' . "\n";
     $hleft--;
     $h_format .= ('-' x $width) . "\n";
     $hleft--;
-    formline ($h_format, ('FOUND', 'QUERY'));
+    formline ($h_format, ('FOUND', 'DATABASE', 'QUERY'));
 
-    my $l_format = '@#######  @';
+    my $l_format = '@#######  @<<<<<<<<<<<<<<<<<  @';
     $wleft -= length($l_format);
 
     $l_format .= '<' x $wleft;
@@ -105,7 +112,7 @@ sub printer_top () {
     my $lines = ($hleft > count_report_lines()) ? count_report_lines() : $hleft;
 
     my @out_lines;
-    map { push @out_lines, $stat{$_}, $_ } (sort { $stat{$b} <=> $stat{$a} } keys %stat)[0..$lines-1];
+    map { push @out_lines, $stat{$_}{count}, $stat{$_}{db}, $stat{$_}{q} } (sort { $stat{$b}{count} <=> $stat{$a}{count} } keys %stat)[0..$lines-1];
     if (@out_lines) {
         formline ($l_format x $lines, @out_lines);
     } else {
@@ -123,15 +130,20 @@ my $iter = 1;
 while (1) {
     foreach my $row (@{$dbh->selectall_arrayref($query)}) {
         my $info = $row->[7];
+        my $db = $row->[3];
+        my $state = $row->[6];
 
-        if (defined $info && $info ne $query) {
+        if (defined $info && defined $db && defined $state && $info ne $query) {
             $info =~ s/[\n\t ]+/ /g;
             $info =~ s/"(?:[^\\"]|\\.)*"/"..."/g;
             $info =~ s/'(?:[^\\']|\\.)*'/'...'/g;
             $info =~ s/([^a-zA-Z\d_]?)\d+/${1}00/g;
             $info =~ s/\(((00|'\.\.\.'|"\.\.\.")(, *)?)*\)/(...)/g;
             $info = lc $info;
-            $stat{$info}++;
+            $stat{"$db-$info"}{count}++;
+            $stat{"$db-$info"}{db}=$db;
+            $stat{"$db-$info"}{q}=$info;
+            $stat{"$db-$info"}{state}{$state}++;
             $stat_report_queries_found++;
             $stat_total_queries_found++;
         }
@@ -200,6 +212,10 @@ by default 100*100=1000ms=10secs.
 =item B<--report-resets-stats>
 
 Reset statistics on every report. Default is off.
+
+=item B<--report-states>
+
+Include states statistics into the report. This option works only with default style.
 
 =item B<--style "...">
 
