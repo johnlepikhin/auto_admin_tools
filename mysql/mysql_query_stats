@@ -72,6 +72,7 @@ sub printer_default () {
     print "-- TIMESTAMP $timestamp\n";
     my $time = strftime "%F %T", localtime $timestamp;
     print "-- TIME $time\n";
+    print "-- TOTAL REPORTED QUERIES $stat_report_queries_found\n";
     my $i = 0;
   REPORT:
     foreach (sort { $stat{$b}{count} <=> $stat{$a}{count} } keys %stat)
