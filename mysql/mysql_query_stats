@@ -188,7 +188,7 @@ MySQL user name. Default value B<root>.
 
 =item B<--password "..."> or B<-p "...">
 
-MySQL password. This option is required.
+MySQL password. If no password is specified, tool will try to read it from my.cnf (see next option)
 
 =item B<--my-cnf "...">
 
