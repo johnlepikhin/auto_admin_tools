@@ -1,0 +1,219 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Pod::Usage;
+use DBI;
+use Time::HiRes qw(sleep time);
+use POSIX qw(strftime);
+use Term::Cap;
+use Term::ReadKey;
+
+my $opt_host = 'localhost';
+my $opt_port = 3306;
+my $opt_user = 'root';
+my $opt_password = undef;
+my $opt_help = 0;
+my $opt_man = 0;
+my $opt_interval = 100;
+my $opt_head = 10;
+my $opt_report_iterations = 100;
+my $opt_report_resets_stats = 0;
+my $opt_my_cnf = '~/.my.cnf';
+my $opt_reports_limit = 0;
+
+GetOptions('h=s' => \$opt_host
+           , 'host|h=s' => \$opt_host
+           , 'password|p=s' => \$opt_password
+           , 'user|u=s' => \$opt_user
+           , 'my-cnf=s' => \$opt_my_cnf
+           , 'port=i' => \$opt_port
+           , 'interval|i=i' => \$opt_interval
+           , 'head' => \$opt_head
+           , 'report-iterations=i' => \$opt_report_iterations
+           , 'report-resets-stats' => \$opt_report_resets_stats
+           , 'reports-limit=i' => \$opt_reports_limit
+           , 'help|?' => \$opt_help
+           , 'man|?' => \$opt_man
+    );
+
+pod2usage(-exitval => 0, -verbose => 2) if $opt_man;
+pod2usage(1) if $opt_help;
+
+sub fatal ($) {
+    printf STDERR "\n$_[0]\n\n";
+    pod2usage(1);
+}
+
+if (!@ARGV) {
+   fatal "Query template required!"
+}
+
+my $template = lc $ARGV[0];
+
+my $dbh = DBI->connect("DBI:mysql:host=$opt_host;port=$opt_port;mysql_read_default_file=$opt_my_cnf",
+                       $opt_user, $opt_password,
+                       {'RaiseError' => 1});
+
+my %stat;
+my $stat_report_queries_found = 0;
+my $stat_total_queries_found = 0;
+
+sub count_report_lines () {
+    return (keys %stat);
+}
+
+sub printer_default () {
+    print "-------------------------------------------------\n";
+    my $timestamp = time();
+    print "-- TIMESTAMP $timestamp\n";
+    my $time = strftime "%F %T", localtime $timestamp;
+    print "-- TIME $time\n";
+    print "-- TEMPLATE $template\n";
+    print "-- TOTAL REPORTED QUERIES $stat_report_queries_found\n";
+    my $unique = (keys %stat);
+    print "-- UNIQUE QUERIES FOUND $unique\n";
+    my $i = 0;
+  REPORT:
+    foreach (sort { $stat{$b}{count} <=> $stat{$a}{count} } keys %stat)
+  {
+      print "$stat{$_}{count}\t$stat{$_}{db}\t$stat{$_}{q}\n";
+
+      print "\n";
+      
+      last REPORT if ++$i == $opt_head;
+  }
+}
+
+my $query = 'show full processlist';
+
+print "-- Collecting data...\n";
+
+my $iter = 1;
+my $reports = 0;
+while (1) {
+    foreach my $row (@{$dbh->selectall_arrayref($query)}) {
+        my $info = $row->[7];
+        my $db = $row->[3];
+
+        if (defined $info && defined $db && $info ne $query) {
+            $info =~ s/[\n\t ]+/ /g;
+            my $q = $info;
+            $info =~ s/"(?:[^\\"]|\\.)*"/"..."/g;
+            $info =~ s/'(?:[^\\']|\\.)*'/'...'/g;
+            $info =~ s/([^a-zA-Z\d_]?)\d+/${1}00/g;
+            $info =~ s/\(((00|'\.\.\.'|"\.\.\.")(, *)?)*\)/(...)/g;
+            $info = lc $info;
+            if ($info eq $template) {
+                $stat{"$db-$q"}{count}++;
+                $stat{"$db-$q"}{db}=$db;
+                $stat{"$db-$q"}{q}=$q;
+                $stat_report_queries_found++;
+                $stat_total_queries_found++;
+            }
+        }
+    }
+
+    sleep($opt_interval/1000);
+
+    if ($iter % $opt_report_iterations == 0) {
+        printer_default ();
+        if ($opt_report_resets_stats) {
+            $stat_report_queries_found=0;
+            %stat = ();
+        }
+        $reports++;
+        if ($opt_reports_limit > 0 && $reports == $opt_reports_limit) {
+            exit 0;
+        }
+    }
+    $iter++;
+}
+
+__END__
+
+=head1 NAME
+
+mysql_similar_queries - Collect similar to template queries
+
+=head1 SYNOPSIS
+
+mysql_similar_queries [options] -- 'query template'
+
+This script uses the same templates as in output of related script: mysql_query_stats. For example:
+
+mysql_similar_queries [options] -- 'select * from tbl where id=00 and name="..."'
+
+this template will match queries:
+
+select * from tbl where id=2 and name="John"
+select * from tbl where id=5070 and name="Eugene"
+select * from tbl where id=156 and name="Evgenii"
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<--host "..."> or B<-h "...">
+
+MySQL host name. Default value B<localhost>.
+
+=item B<--port N>
+
+MySQL port. Default value B<3306>.
+
+=item B<--user "..."> or B<-u "...">
+
+MySQL user name. Default value B<root>.
+
+=item B<--password "..."> or B<-p "...">
+
+MySQL password. If no password is specified, tool will try to read it from my.cnf (see next option)
+
+=item B<--my-cnf "...">
+
+Path to my.cnf, default is ~/.my.cnf. Useful for storing password.
+
+=item B<--interval N> or B<-i N>
+
+Interval in milliseconds between two queries of processlist. Default value is 100ms.
+
+=item B<--head N>
+
+Print only N of heading queries. Default is 10.
+
+=item B<--report-iterations N>
+
+Before printing next report collect data for N iterations. Default value is 100.
+Thus, report will be printed each <--interval>*<--report-iterations> milliseconds,
+by default 100*100=1000ms=10secs.
+
+=item B<--report-resets-stats>
+
+Reset statistics on every report. Default is off.
+
+=item B<--reports-limit N>
+
+Report only N times and exit. If N=0 then report forever, until Ctrl-C is pressed. Default is 0.
+
+=item B<--help>
+
+Print a brief help message and exits.
+
+=item B<--man>
+
+Prints the manual page and exits.
+
+=back
+
+=head1 DESCRIPTION
+
+This program tries to gather queires statistics in the same way as OProfile does for Linux kernel.
+
+It periodically sends C<show full processlist> parse response and collects queries of the same type. For example,
+C<select * from tbl where id=1> and C<select * from tbl where id=999> are counted with the same type.
+
+
+=cut
+
