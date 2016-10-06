@@ -24,6 +24,7 @@ my $opt_report_states = 0;
 my $opt_report_sample = 0;
 my $opt_style = 'default';
 my $opt_my_cnf = '~/.my.cnf';
+my $opt_reports_limit = 0;
 
 GetOptions('h=s' => \$opt_host
            , 'host|h=s' => \$opt_host
@@ -38,6 +39,7 @@ GetOptions('h=s' => \$opt_host
            , 'report-resets-stats' => \$opt_report_resets_stats
            , 'report-states' => \$opt_report_states
            , 'report-sample' => \$opt_report_sample
+           , 'reports-limit=i' => \$opt_reports_limit
            , 'help|?' => \$opt_help
            , 'man|?' => \$opt_man
     );
@@ -133,6 +135,7 @@ my $query = 'show full processlist';
 print "-- Collecting data...\n";
 
 my $iter = 1;
+my $reports = 0;
 while (1) {
     foreach my $row (@{$dbh->selectall_arrayref($query)}) {
         my $info = $row->[7];
@@ -168,6 +171,10 @@ while (1) {
         if ($opt_report_resets_stats) {
             $stat_report_queries_found=0;
             %stat = ();
+        }
+        $reports++;
+        if ($opt_reports_limit > 0 && $reports == $opt_reports_limit) {
+            exit 0;
         }
     }
     $iter++;
@@ -236,6 +243,10 @@ Include states statistics into the report. This option works only with default s
 =item B<--report-sample>
 
 Include sample query into the report. This option works only with default style.
+
+=item B<--reports-limit N>
+
+Report only N times and exit. If N=0 then report forever, until Ctrl-C is pressed. Default is 0.
 
 =item B<--help>
 
