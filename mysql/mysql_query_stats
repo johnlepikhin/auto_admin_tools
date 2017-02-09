@@ -25,6 +25,7 @@ my $opt_report_sample = 0;
 my $opt_style = 'default';
 my $opt_my_cnf = '~/.my.cnf';
 my $opt_reports_limit = 0;
+my $opt_count_db = 0;
 
 GetOptions('h=s' => \$opt_host
            , 'host|h=s' => \$opt_host
@@ -40,6 +41,7 @@ GetOptions('h=s' => \$opt_host
            , 'report-states' => \$opt_report_states
            , 'report-sample' => \$opt_report_sample
            , 'reports-limit=i' => \$opt_reports_limit
+			  , 'count-db' => \$opt_count_db
            , 'help|?' => \$opt_help
            , 'man|?' => \$opt_man
     );
@@ -144,13 +146,18 @@ while (1) {
 
         if (defined $info && defined $db && defined $state && $info ne $query) {
             next if length $info > 30000;
-            $info =~ s/[\n\t ]+/ /g;
-            my $sample = $info;
-            $info =~ s/"(?:[^\\"]|\\.)*"/"..."/g;
-            $info =~ s/'(?:[^\\']|\\.)*'/'...'/g;
-            $info =~ s/([^a-zA-Z\d_]?)\d+/${1}00/g;
-            $info =~ s/\(((00|'\.\.\.'|"\.\.\.")(, *)?)*\)/(...)/g;
-            $info = lc $info;
+				my $sample = '';
+				if ($opt_count_db) {
+					$info = '';
+				} else {
+					$info =~ s/[\n\t ]+/ /g;
+					$sample = $info;
+					$info =~ s/"(?:[^\\"]|\\.)*"/"..."/g;
+					$info =~ s/'(?:[^\\']|\\.)*'/'...'/g;
+					$info =~ s/([^a-zA-Z\d_]?)\d+/${1}00/g;
+					$info =~ s/\(((00|'\.\.\.'|"\.\.\.")(, *)?)*\)/(...)/g;
+					$info = lc $info;
+				}
             $stat{"$db-$info"}{count}++;
             $stat{"$db-$info"}{db}=$db;
             $stat{"$db-$info"}{q}=$info;
@@ -248,6 +255,10 @@ Include sample query into the report. This option works only with default style.
 =item B<--reports-limit N>
 
 Report only N times and exit. If N=0 then report forever, until Ctrl-C is pressed. Default is 0.
+
+=item B<--count-db>
+
+Gather statistics only by DB name, not by query kind.
 
 =item B<--help>
 
