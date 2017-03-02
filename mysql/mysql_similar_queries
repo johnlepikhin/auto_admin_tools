@@ -38,12 +38,12 @@ GetOptions('h=s' => \$opt_host
            , 'man|?' => \$opt_man
     );
 
-pod2usage(-exitval => 0, -verbose => 2) if $opt_man;
-pod2usage(1) if $opt_help;
+pod2usage(-exitval => 0, -verbose => 2, -input => \*DATA) if $opt_man;
+pod2usage(-exitval => 1, -input => \*DATA) if $opt_help;
 
 sub fatal ($) {
     printf STDERR "\n$_[0]\n\n";
-    pod2usage(1);
+    pod2usage(-exitval => 1, -input => \*DATA);
 }
 
 if (!@ARGV) {
@@ -132,7 +132,7 @@ while (1) {
     $iter++;
 }
 
-__END__
+__DATA__
 
 =head1 NAME
 
