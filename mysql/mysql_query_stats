@@ -25,7 +25,10 @@ my $opt_report_sample = 0;
 my $opt_style = 'default';
 my $opt_my_cnf = '~/.my.cnf';
 my $opt_reports_limit = 0;
-my $opt_count_db = 0;
+my $opt_filter_db = undef;
+my $opt_filter_query = undef;
+my $opt_filter_state = undef;
+my $opt_agregate_key = 'db+query';
 
 GetOptions('h=s' => \$opt_host
            , 'host|h=s' => \$opt_host
@@ -41,7 +44,10 @@ GetOptions('h=s' => \$opt_host
            , 'report-states' => \$opt_report_states
            , 'report-sample' => \$opt_report_sample
            , 'reports-limit=i' => \$opt_reports_limit
-			  , 'count-db' => \$opt_count_db
+           , 'filter-db=s' => \$opt_filter_db
+           , 'filter-query=s' => \$opt_filter_query
+           , 'filter-state=s' => \$opt_filter_state
+           , 'agregate-key=s' => \$opt_agregate_key
            , 'help|?' => \$opt_help
            , 'man|?' => \$opt_man
     );
@@ -58,6 +64,10 @@ if ($opt_style ne 'default' && $opt_style ne 'top') {
     fatal "Ivalid value for --style!";
 }
 
+if ($opt_agregate_key ne 'db+query' && $opt_agregate_key ne 'db' && $opt_agregate_key ne 'query') {
+    fatal "Ivalid value for --agregate-key. Possible values: 'db+query' (default), 'db', 'query'";
+}
+
 my $dbh = DBI->connect("DBI:mysql:host=$opt_host;port=$opt_port;mysql_read_default_file=$opt_my_cnf",
                        $opt_user, $opt_password,
                        {'RaiseError' => 1});
@@ -65,6 +75,10 @@ my $dbh = DBI->connect("DBI:mysql:host=$opt_host;port=$opt_port;mysql_read_defau
 my %stat;
 my $stat_report_queries_found = 0;
 my $stat_total_queries_found = 0;
+
+my $rex_filter_db = (defined $opt_filter_db) ? qr/$opt_filter_db/ : undef;
+my $rex_filter_query = (defined $opt_filter_query) ? qr/$opt_filter_query/ : undef;
+my $rex_filter_state = (defined $opt_filter_state) ? qr/$opt_filter_state/ : undef;
 
 sub count_report_lines () {
     return (keys %stat);
@@ -146,23 +160,38 @@ while (1) {
 
         if (defined $info && defined $db && defined $state && $info ne $query) {
             next if length $info > 30000;
-				my $sample = '';
-				if ($opt_count_db) {
-					$info = '';
-				} else {
-					$info =~ s/[\r\n\t ]+/ /g;
-					$sample = $info;
-					$info =~ s/"(?:[^\\"]|\\.)*"/"..."/g;
-					$info =~ s/'(?:[^\\']|\\.)*'/'...'/g;
-					$info =~ s/([^a-zA-Z\d_]?)\d+/${1}00/g;
-					$info =~ s/\(((00|'\.\.\.'|"\.\.\.")(, *)?)*\)/(...)/g;
-					$info = lc $info;
-				}
-            $stat{"$db-$info"}{count}++;
-            $stat{"$db-$info"}{db}=$db;
-            $stat{"$db-$info"}{q}=$info;
-            $stat{"$db-$info"}{sample}=$sample;
-            $stat{"$db-$info"}{state}{$state}++;
+            my $sample = '';
+
+            $info =~ s/[\r\n\t ]+/ /g;
+            $sample = $info;
+            $info =~ s/"(?:[^\\"]|\\.)*"/"..."/g;
+            $info =~ s/'(?:[^\\']|\\.)*'/'...'/g;
+            $info =~ s/([^a-zA-Z\d_]?)\d+/${1}00/g;
+            $info =~ s/\(((00|'\.\.\.'|"\.\.\.")(, *)?)*\)/(...)/g;
+            $info = lc $info;
+
+            next if defined $rex_filter_db && $db !~ $rex_filter_db;
+            next if defined $rex_filter_query && $info !~ $rex_filter_query;
+            next if defined $rex_filter_state && $state !~ $rex_filter_state;
+
+            my $key;
+            if ($opt_agregate_key eq 'db+query') {
+                $key = "$db-$info";
+                $stat{$key}{db}=$db;
+                $stat{$key}{q}=$info;
+            } elsif ($opt_agregate_key eq 'db') {
+                $key = $db;
+                $stat{$key}{db}=$db;
+                $stat{$key}{q}='ANY_QUERY';
+            } elsif ($opt_agregate_key eq 'query') {
+                $key = $info;
+                $stat{$key}{db}='ANY_DB';
+                $stat{$key}{q}=$info;
+            }
+            
+            $stat{$key}{count}++;
+            $stat{$key}{sample}=$sample;
+            $stat{$key}{state}{$state}++;
             $stat_report_queries_found++;
             $stat_total_queries_found++;
         }
@@ -256,9 +285,22 @@ Include sample query into the report. This option works only with default style.
 
 Report only N times and exit. If N=0 then report forever, until Ctrl-C is pressed. Default is 0.
 
-=item B<--count-db>
+=item B<--filter-db REGEX>
 
-Gather statistics only by DB name, not by query kind.
+Filter all queries by database name using regexp REGEX
+
+=item B<--filter-query REGEX>
+
+Filter all queries using regexp REGEX
+
+=item B<--filter-state REGEX>
+
+Filter all queries by current thread state using regexp REGEX.
+Possible states are documented here: https://dev.mysql.com/doc/refman/5.7/en/general-thread-states.html
+
+=item B<--agregate-key KEY>
+
+Group statistics by database name, by query type or by both. Valid argument values are: 'db', 'query' or 'db+query'.
 
 =item B<--help>
 
