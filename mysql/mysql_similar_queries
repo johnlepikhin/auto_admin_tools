@@ -99,7 +99,7 @@ while (1) {
 
         if (defined $info && defined $db && $info ne $query) {
             next if length $info > 30000;
-            $info =~ s/[\n\t ]+/ /g;
+            $info =~ s/[\r\n\t ]+/ /g;
             my $q = $info;
             $info =~ s/"(?:[^\\"]|\\.)*"/"..."/g;
             $info =~ s/'(?:[^\\']|\\.)*'/'...'/g;

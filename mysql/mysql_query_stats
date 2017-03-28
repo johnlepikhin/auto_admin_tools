@@ -150,7 +150,7 @@ while (1) {
 				if ($opt_count_db) {
 					$info = '';
 				} else {
-					$info =~ s/[\n\t ]+/ /g;
+					$info =~ s/[\r\n\t ]+/ /g;
 					$sample = $info;
 					$info =~ s/"(?:[^\\"]|\\.)*"/"..."/g;
 					$info =~ s/'(?:[^\\']|\\.)*'/'...'/g;
