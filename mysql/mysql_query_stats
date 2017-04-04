@@ -29,6 +29,7 @@ my $opt_filter_db = undef;
 my $opt_filter_query = undef;
 my $opt_filter_state = undef;
 my $opt_agregate_key = 'db+query';
+my $opt_whitelist_file = undef;
 
 GetOptions('h=s' => \$opt_host
            , 'host|h=s' => \$opt_host
@@ -48,12 +49,15 @@ GetOptions('h=s' => \$opt_host
            , 'filter-query=s' => \$opt_filter_query
            , 'filter-state=s' => \$opt_filter_state
            , 'agregate-key=s' => \$opt_agregate_key
+	   , 'whitelist-file=s' => \$opt_whitelist_file
            , 'help|?' => \$opt_help
            , 'man|?' => \$opt_man
     );
 
 pod2usage(-exitval => 0, -verbose => 2, -input => \*DATA) if $opt_man;
 pod2usage(-exitval => 1, -input => \*DATA) if $opt_help;
+
+my %whitelist;
 
 sub fatal ($) {
     printf STDERR "\n$_[0]\n\n";
@@ -66,6 +70,20 @@ if ($opt_style ne 'default' && $opt_style ne 'top') {
 
 if ($opt_agregate_key ne 'db+query' && $opt_agregate_key ne 'db' && $opt_agregate_key ne 'query') {
     fatal "Ivalid value for --agregate-key. Possible values: 'db+query' (default), 'db', 'query'";
+}
+
+if (defined $opt_whitelist_file) {
+    fatal "Whitelist file doesn't exist: $opt_whitelist_file" if !-e $opt_whitelist_file;
+
+    my $fh;
+    open ($fh, $opt_whitelist_file) || fatal "Cannot read whitelist file '$opt_whitelist_file': $!";
+    while (<$fh>) {
+	chomp;
+	next if length $_ == 0 || /^--/;
+
+	$whitelist{$_} = 1;
+    }
+    close $fh;
 }
 
 my $dbh = DBI->connect("DBI:mysql:host=$opt_host;port=$opt_port;mysql_read_default_file=$opt_my_cnf",
@@ -173,6 +191,8 @@ while (1) {
             next if defined $rex_filter_db && $db !~ $rex_filter_db;
             next if defined $rex_filter_query && $info !~ $rex_filter_query;
             next if defined $rex_filter_state && $state !~ $rex_filter_state;
+
+	    next if exists $whitelist{$info};
 
             my $key;
             if ($opt_agregate_key eq 'db+query') {
@@ -301,6 +321,10 @@ Possible states are documented here: https://dev.mysql.com/doc/refman/5.7/en/gen
 =item B<--agregate-key KEY>
 
 Group statistics by database name, by query type or by both. Valid argument values are: 'db', 'query' or 'db+query'.
+
+=item B<--whitelist-file FILE>
+
+Query types listed in this file (query type per line) will not be appeared in outout.
 
 =item B<--help>
 
