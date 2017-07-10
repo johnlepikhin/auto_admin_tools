@@ -31,6 +31,7 @@ my $opt_filter_state = undef;
 my $opt_agregate_key = 'db+query';
 my $opt_whitelist_file = undef;
 my $opt_show_percents = 0;
+my $opt_report_states_totals = 0;
 
 GetOptions('h=s' => \$opt_host
            , 'host|h=s' => \$opt_host
@@ -52,6 +53,7 @@ GetOptions('h=s' => \$opt_host
            , 'agregate-key=s' => \$opt_agregate_key
 	   , 'whitelist-file=s' => \$opt_whitelist_file
            , 'show-percents' => \$opt_show_percents
+           , 'report-states-totals' => \$opt_report_states_totals
            , 'help|?' => \$opt_help
            , 'man|?' => \$opt_man
     );
@@ -119,6 +121,30 @@ sub printer_default () {
     }
     my $load_averages = sprintf '%.3f', $stat_report_queries_found/$iter*100;
     print "-- LOAD AVERAGES (found queries per iteration): $load_averages\n";
+
+    if ($opt_report_states_totals) {
+        my $total = 0;
+        my %states;
+        foreach my $k (keys %stat) {
+            foreach my $state (keys %{$stat{$k}{state}}) {
+                $total += $stat{$k}{state}{$state};
+                $states{$state} += $stat{$k}{state}{$state};
+            }
+        }
+
+        print "-- TOTAL STATES STATISTICS:\n";
+        foreach (sort { $states{$b} <=> $states{$a} } keys %states) {
+            my $count;
+            if ($opt_show_percents) {
+                $count = sprintf '%.3f%%', $states{$_}/$total*100;
+            } else {
+                $count = $states{$_};
+            }
+            print "-- $count state '$_'\n";
+        }
+        print "\n";
+    }
+    
     my $i = 0;
   REPORT:
     foreach (sort { $stat{$b}{count} <=> $stat{$a}{count} } keys %stat)
@@ -355,6 +381,10 @@ Query types listed in this file (query type per line) will not be appeared in ou
 =item B<--show-percents>
 
 Show percents instead of absolute counters
+
+=item B<--report-states-totals>
+
+Show overal statistics per state
 
 =item B<--help>
 
