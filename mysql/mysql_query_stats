@@ -30,6 +30,7 @@ my $opt_filter_query = undef;
 my $opt_filter_state = undef;
 my $opt_agregate_key = 'db+query';
 my $opt_whitelist_file = undef;
+my $opt_show_percents = 0;
 
 GetOptions('h=s' => \$opt_host
            , 'host|h=s' => \$opt_host
@@ -50,6 +51,7 @@ GetOptions('h=s' => \$opt_host
            , 'filter-state=s' => \$opt_filter_state
            , 'agregate-key=s' => \$opt_agregate_key
 	   , 'whitelist-file=s' => \$opt_whitelist_file
+           , 'show-percents' => \$opt_show_percents
            , 'help|?' => \$opt_help
            , 'man|?' => \$opt_man
     );
@@ -93,6 +95,8 @@ my $dbh = DBI->connect("DBI:mysql:host=$opt_host;port=$opt_port;mysql_read_defau
 my %stat;
 my $stat_report_queries_found = 0;
 my $stat_total_queries_found = 0;
+my $iter = 1;
+my $reports = 0;
 
 my $rex_filter_db = (defined $opt_filter_db) ? qr/$opt_filter_db/ : undef;
 my $rex_filter_query = (defined $opt_filter_query) ? qr/$opt_filter_query/ : undef;
@@ -108,16 +112,32 @@ sub printer_default () {
     print "-- TIMESTAMP $timestamp\n";
     my $time = strftime "%F %T", localtime $timestamp;
     print "-- TIME $time\n";
-    print "-- TOTAL REPORTED QUERIES $stat_report_queries_found\n";
+    if ($opt_show_percents) {
+        print "-- TOTAL REPORTED QUERIES 100% ($stat_report_queries_found)\n";
+    } else {
+        print "-- TOTAL REPORTED QUERIES $stat_report_queries_found\n";
+    }
+    my $load_averages = sprintf '%.3f', $stat_report_queries_found/$iter*100;
+    print "-- LOAD AVERAGES (found queries per iteration): $load_averages\n";
     my $i = 0;
   REPORT:
     foreach (sort { $stat{$b}{count} <=> $stat{$a}{count} } keys %stat)
   {
-      print "$stat{$_}{count}\t$stat{$_}{db}\t$stat{$_}{q}\n";
+      if ($opt_show_percents) {
+          my $pct = sprintf '%.3f', $stat{$_}{count}/$stat_report_queries_found*100;
+          print "$pct%\t$stat{$_}{db}\t$stat{$_}{q}\n";
+      } else {
+          print "$stat{$_}{count}\t$stat{$_}{db}\t$stat{$_}{q}\n";
+      }
 
       if ($opt_report_states) {
           foreach my $state (sort { $stat{$_}{state}{$b} <=> $stat{$_}{state}{$a} } keys %{$stat{$_}{state}}) {
-              print "-- State statistics: $stat{$_}{state}{$state} $state\n";
+              if ($opt_show_percents) {
+                  my $pct = sprintf '%.3f', $stat{$_}{state}{$state}/$stat_report_queries_found*100;
+                  print "-- State statistics: $pct% $state\n";
+              } else {
+                  print "-- State statistics: $stat{$_}{state}{$state} $state\n";
+              }
           }
       }
       
@@ -154,7 +174,15 @@ sub printer_top () {
     my $lines = ($hleft > count_report_lines()) ? count_report_lines() : $hleft;
 
     my @out_lines;
-    map { push @out_lines, $stat{$_}{count}, $stat{$_}{db}, $stat{$_}{q} } (sort { $stat{$b}{count} <=> $stat{$a}{count} } keys %stat)[0..$lines-1];
+    map {
+        my $count;
+        if ($opt_show_percents) {
+            $count = sprintf '%.3f', $stat{$_}{count} / $stat_report_queries_found * 100;
+        } else {
+            $count = $stat_report_queries_found;
+        }
+        push @out_lines, $count, $stat{$_}{db}, $stat{$_}{q}
+    } (sort { $stat{$b}{count} <=> $stat{$a}{count} } keys %stat)[0..$lines-1];
     if (@out_lines) {
         formline ($l_format x $lines, @out_lines);
     } else {
@@ -168,8 +196,6 @@ my $query = 'show full processlist';
 
 print "-- Collecting data...\n";
 
-my $iter = 1;
-my $reports = 0;
 while (1) {
     foreach my $row (@{$dbh->selectall_arrayref($query)}) {
         my $info = $row->[7];
@@ -325,6 +351,10 @@ Group statistics by database name, by query type or by both. Valid argument valu
 =item B<--whitelist-file FILE>
 
 Query types listed in this file (query type per line) will not be appeared in outout.
+
+=item B<--show-percents>
+
+Show percents instead of absolute counters
 
 =item B<--help>
 
