@@ -7,12 +7,16 @@ use Carp qw(cluck croak confess);
 
 my $opt_sleep      = 1;
 my $opt_iterations = 2**62;
+my $opt_indent = 0;
 my $opt_command;
+my $opt_color = 0;
 
 GetOptions(
     's=f' => \$opt_sleep,
     'n=i' => \$opt_iterations,
     'c=s' => \$opt_command,
+    'i' => \$opt_indent,
+    'color' => \$opt_color,
 ) || croak "Cannot parse command line arguments";
 
 if ( !defined $opt_command ) {
@@ -35,8 +39,22 @@ for ( 1 .. $opt_iterations ) {
                 if ($v > 0) {
                     $v = "+$v";
                 }
-                my $len = length $new[$pos];
-                printf "% ${len}s", $v;
+                if ($opt_color) {
+                    if ($v > 0) {
+                        print "\x1b[0;32m";
+                    } elsif ($v < 0) {
+                        print "\x1b[0;31m";
+                    }
+                }
+                if ($opt_indent) {
+                    my $len = length $new[$pos];
+                    printf "% ${len}s", $v;
+                } else {
+                    print $v;
+                }
+                if ($opt_color && $v) {
+                    print "\x1b[0m";
+                }
             } else {
                 print $new[$pos];
             }
